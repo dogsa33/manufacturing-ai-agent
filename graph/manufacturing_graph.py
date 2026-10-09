@@ -267,6 +267,50 @@ all required arguments:
 The application has a separate argument-validation node that will ask
 the user for missing values.
 
+IMPORTANT TOOL SELECTION RULE:
+
+1. Use `predict_machine_failure` when the user asks only for:
+   - failure prediction
+   - failure probability
+   - risk level
+   - whether the condition is risky
+   - general failure-risk analysis without explicitly asking for reasons,
+     influential variables, risk drivers, or sensitivity
+
+   Examples:
+   - "고장 위험을 예측해줘."
+   - "고장 위험을 분석해줘."
+   - "이 조건이 위험한지 알려줘."
+   - "고장 확률이 얼마나 되는지 알려줘."
+
+2. Use `explain_machine_failure` only when the user explicitly asks
+   WHY the prediction is risky or asks for variable-level explanation.
+
+   Explanation intent includes requests such as:
+   - "왜 위험한지"
+   - "왜 이렇게 예측됐는지"
+   - "주요 변수를 분석해줘"
+   - "어떤 변수가 영향을 줬는지"
+   - "위험요인을 설명해줘"
+   - "risk driver"
+   - "local sensitivity"
+   - "변수별 영향"
+   - "주요 원인을 모델 기준으로 설명"
+
+3. `explain_machine_failure` already provides the failure prediction,
+   failure probability, risk level, and local sensitivity analysis.
+   Therefore, if BOTH prediction and explicit explanation intent are present,
+   use `explain_machine_failure` directly.
+
+4. IMPORTANT:
+   The Korean words "분석", "분석해줘", or "위험 분석" by themselves
+   do NOT mean explanation intent.
+   Do not select `explain_machine_failure` unless the user explicitly asks
+   for reasons, influential variables, risk drivers, or local sensitivity.
+
+5. Do NOT choose a tool based only on the first keyword.
+   Determine whether explicit explanation intent exists in the full request.
+
 Examples:
 
 User:
@@ -279,6 +323,42 @@ Correct:
   "tool_name": "predict_machine_failure",
   "tool_arguments": {{
     "product_type": "L"
+  }}
+}}
+
+User:
+"다음 제조조건의 고장 위험을 분석해줘. Product Type은 L, Air temperature는 301.0, Process temperature는 310.5, Rotational speed는 1300, Torque는 65.0, Tool wear는 200이야."
+
+Correct:
+
+{{
+  "route": "tool",
+  "tool_name": "predict_machine_failure",
+  "tool_arguments": {{
+    "product_type": "L",
+    "air_temperature": 301.0,
+    "process_temperature": 310.5,
+    "rotational_speed": 1300,
+    "torque": 65.0,
+    "tool_wear": 200
+  }}
+}}
+
+User:
+"다음 제조조건의 고장 위험을 먼저 예측하고, 왜 위험하게 판단됐는지도 주요 변수 기준으로 분석해줘. Product Type은 L, Air temperature는 301.0, Process temperature는 310.5, Rotational speed는 1300, Torque는 65.0, Tool wear는 200이야."
+
+Correct:
+
+{{
+  "route": "tool",
+  "tool_name": "explain_machine_failure",
+  "tool_arguments": {{
+    "product_type": "L",
+    "air_temperature": 301.0,
+    "process_temperature": 310.5,
+    "rotational_speed": 1300,
+    "torque": 65.0,
+    "tool_wear": 200
   }}
 }}
 
