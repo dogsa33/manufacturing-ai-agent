@@ -70,7 +70,7 @@ models/*.joblib
 # =========================================================
 
 reports/generated/*.html
-
+reports/figures/*.html
 
 # =========================================================
 # Eval Runtime Results

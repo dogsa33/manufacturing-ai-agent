@@ -1,7 +1,0 @@
-﻿id,description,tool_count,required_tools_ok,forbidden_tools_ok,answer_patterns_ok,efficiency_ok,validator_passed,case_passed
-summary_l,Product Type L 기본 통계 조회,1,True,True,True,True,True,True
-torque_comparison,Torque 정상/고장 비교,1,True,True,True,True,True,True
-failure_prediction,특정 제조조건 고장 예측,2,True,True,True,True,True,True
-prediction_explanation,고장 예측 및 위험요인 분석,2,True,True,True,True,True,True
-missing_prediction_inputs,예측 입력값 부족 시 추측 방지,0,True,True,True,True,True,True
-torque_chart,Torque 정상/고장 분포 시각화,1,True,True,True,True,True,True
