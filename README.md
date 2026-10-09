@@ -1,36 +1,39 @@
 # Manufacturing AI Agent
 
-> **MCP-based AI Agent for Manufacturing Predictive Maintenance & Failure Analysis**
+> **LangGraph-based Manufacturing AI Agent with MCP Tools, Corrective RAG, Validation, and Durable Memory**
 
-**Python 3.12 · OpenAI Agents SDK · MCP · DuckDB · Random Forest · Streamlit**
+**Python 3.12 · LangGraph · MCP · OpenAI API · BGE-M3 · Qdrant · BGE Reranker · DuckDB · Random Forest · Streamlit · SQLite**
 
-제조 데이터를 자연어로 분석하고, 설비 고장 위험을 예측하며,
-예측 근거를 분석·시각화하는 Tool-using Manufacturing AI Agent입니다.
+제조 데이터를 자연어로 조회·분석하고, 설비 고장 위험을 예측하며,  
+예측 근거와 공정 조건을 설명·시각화하는 **Tool-using Manufacturing AI Agent**입니다.
 
-단순 LLM 질의응답을 넘어 **MCP Tool Calling, Persistent Session Memory,
-Validator/Re-planning, Automated Evaluation**을 적용하여
-Agent의 실행 과정과 답변 신뢰성을 검증할 수 있도록 설계했습니다.
+V1에서는 OpenAI Agents SDK와 MCP를 기반으로 Tool-using Agent를 구현했고,  
+V2에서는 Agent orchestration을 **LangGraph**로 마이그레이션하고 **Corrective RAG, Validator/Re-plan, Missing Argument Clarification, Durable SQLite Checkpoint**를 추가했습니다.
 
 ---
 
-## 1. Project Overview
+# 1. Project Overview
 
-제조 현장에서 데이터 분석을 수행하려면 일반적으로 다음과 같은 작업이 필요합니다.
+제조 현장의 데이터 분석 업무는 일반적으로 다음 단계를 포함합니다.
 
 - 공정 데이터 조회
 - 정상 / 고장 조건 비교
+- 세부 고장 유형 분석
 - 설비 고장 위험 예측
-- 위험요인 분석
+- 주요 위험요인 분석
 - 시각화
+- 기술 문서 기반 질의응답
 - 분석 결과 검증
 
-본 프로젝트는 이러한 기능을 Python 기반 분석 모듈로 구현한 뒤,
-**MCP(Model Context Protocol)** 를 통해 LLM Agent가 사용할 수 있는 Tool로 제공합니다.
+본 프로젝트는 이러한 기능을 Python 분석 모듈과 Machine Learning Model로 구현하고,  
+**MCP(Model Context Protocol)** 를 통해 LangGraph Agent가 사용할 수 있는 Tool로 제공합니다.
 
-사용자는 SQL이나 Python 코드를 직접 작성하지 않고
-자연어만으로 제조 데이터를 분석할 수 있습니다.
+또한 제조·보전·안전 관련 문서에 대해서는 별도의 **RAG pipeline**을 구성해  
+Tool 실행과 문서 근거 기반 답변을 하나의 Agent에서 처리합니다.
 
-예를 들어:
+사용자는 SQL이나 Python 코드를 직접 작성하지 않고 자연어로 요청할 수 있습니다.
+
+예:
 
 ```text
 User
@@ -42,19 +45,20 @@ Agent
 고장률: 3.92%
 ```
 
-특정 제조조건을 입력하면 실제 Machine Learning Model을 호출해
-고장 위험을 예측할 수도 있습니다.
+특정 제조조건을 입력하면 실제 Random Forest Model을 호출해 고장 위험을 예측할 수 있습니다.
 
 ```text
 User
-Type L이고 Air temperature 301,
-Process temperature 310.5,
-Rotational speed 1300,
-Torque 65,
-Tool wear 200일 때 고장 위험을 분석해줘.
+Product Type L이고,
+Air temperature 301.0 K,
+Process temperature 310.5 K,
+Rotational speed 1300 rpm,
+Torque 65.0 Nm,
+Tool wear 200 min일 때 고장 위험을 예측해줘.
 
 Agent
 Failure Probability: 80.33%
+Prediction: FAILURE
 Risk Level: HIGH
 ```
 
@@ -62,200 +66,232 @@ Risk Level: HIGH
 
 # 2. Demo
 
-## 2.1 Manufacturing AI Agent UI
+## 2.1 LangGraph V2: MCP Tool + RAG
 
-Streamlit 기반 Chat UI에서 제조 데이터 분석, 고장 예측,
-위험요인 분석 및 시각화를 자연어로 요청할 수 있습니다.
+Streamlit Chat UI에서 제조 데이터 분석과 문서 기반 질의응답을 모두 수행할 수 있습니다.
 
-![Manufacturing AI Agent Main UI](docs/images/01_Manufacturing_AI_Agent_Main_UI.png)
+![LangGraph V2 Tool and RAG](docs/images/01_streamlit_langgraph_v2_tool_rag.png)
+
+V2에서는 사용자 요청을 먼저 Router가 분류합니다.
+
+```text
+Tool
+→ 제조 데이터 조회 / ML 예측 / 시각화
+
+RAG
+→ 제조·보전·안전 문서 기반 질의응답
+
+Direct
+→ 시스템 기능 설명 / 일반 대화
+```
+
+각 답변 아래에서 실제 MCP Tool 실행 내역과 Validation 결과를 확인할 수 있습니다.
 
 ---
 
-## 2.2 Failure Prediction & Local Explanation
+## 2.2 Missing Argument Clarification + Durable Memory
 
-사용자가 제조조건을 입력하면 Random Forest Model을 통해
-고장 확률을 예측하고, 정상 조건 대비 Local Sensitivity를 이용해
-주요 위험요인을 분석합니다.
+고장 예측에 필요한 입력값이 부족하면 Agent가 값을 임의로 추정하지 않고  
+누락된 항목만 사용자에게 요청합니다.
 
-![Failure Prediction and Local Explanation](docs/images/02_Failure_Prediction_Local_Explanation.png)
+![Durable Memory Prediction Flow](docs/images/02_durable_memory_prediction_flow.png)
 
-예시 결과:
+예:
 
 ```text
+User
+Product Type L의 고장 위험을 예측해줘.
+
+Agent
+다음 정보가 필요합니다.
+- Air temperature
+- Process temperature
+- Rotational speed
+- Torque
+- Tool wear
+```
+
+이후 사용자가 나머지 값만 입력해도 이전 `Product Type L`을 재사용합니다.
+
+```text
+User
+Air temperature 301.0 K,
+Process temperature 310.5 K,
+Rotational speed 1300 rpm,
+Torque 65.0 Nm,
+Tool wear 200 min이야.
+
+Agent
 Failure Probability: 80.33%
+Prediction: FAILURE
 Risk Level: HIGH
-
-Top Risk Drivers
-1. Torque
-2. Tool wear
-3. Rotational speed
 ```
+
+이 상태는 **LangGraph SQLite Checkpoint**에 저장되므로  
+Streamlit / Python 프로세스를 종료했다가 다시 실행해도 동일한 `thread_id`를 사용하면 이전 pending context를 복원할 수 있습니다.
 
 ---
 
-## 2.3 MCP Tool Execution & Validation
+## 2.3 Interactive Manufacturing Visualization
 
-Agent가 어떤 MCP Tool을 실제로 사용했는지 UI에서 확인할 수 있으며,
-별도 Validator가 답변의 Grounding, Completeness,
-Interpretation Safety를 검증합니다.
-
-![MCP Tool Validation](docs/images/03_MCP_Tool_Validation.png)
-
-예:
-
-```text
-Used MCP Tool
-compare_process_condition
-
-Validation
-PASS
-```
-
-이를 통해 단순 Chatbot 답변이 아니라
-**실제 Tool Execution 기반 분석 결과**임을 확인할 수 있습니다.
-
----
-
-## 2.4 Persistent Session Memory
-
-SQLite 기반 Session Memory를 적용하여
-이전 대화의 제조조건과 분석 Context를 후속 질문에서 활용합니다.
-
-![Persistent Session Memory](docs/images/04_Persistent_Session_Memory.png)
-
-예:
-
-```text
-User
-Type L, Torque 65, Tool wear 200 ... 고장 위험을 분석해줘.
-
-Agent
-고장확률은 80.33%입니다.
-
-User
-그럼 가장 영향이 큰 변수는 정상 기준과 얼마나 차이나?
-
-Agent
-가장 영향이 큰 변수는 Torque입니다.
-
-현재값: 65.0
-정상 기준 중앙값: 39.7
-차이: +25.3
-```
-
-두 번째 질문에서는 제조조건을 다시 입력하지 않았지만,
-이전 Conversation Context를 활용해 답변합니다.
-
----
-
-## 2.5 Interactive Manufacturing Visualization
-
-자연어 시각화 요청에 따라 Plotly 기반 제조 데이터 그래프를 생성하고
+자연어 시각화 요청에 따라 Plotly 기반 제조 데이터 그래프를 생성하고  
 Streamlit Chat UI 내부에 직접 표시합니다.
 
-![Torque Normal vs Failure Visualization](docs/images/05_Torque_Normal_vs_Failure_Visualization.png)
+![Torque Distribution Visualization](docs/images/03_torque_distribution_visualization.png)
 
 예:
 
 ```text
 User
-Torque의 정상 제품과 고장 제품 분포를 그래프로 보여줘.
+Torque의 정상 제품과 고장 제품 분포를 그래프로 만들어줘.
 
 Agent
-→ feature_distribution_chart Tool 호출
-→ Plotly Visualization 생성
+→ feature_distribution_chart Tool 실행
+→ Plotly HTML 생성
+→ Streamlit UI에 렌더링
 ```
 
 ---
 
-# 3. System Architecture
+# 3. V1 → V2 Migration
+
+## V1
+
+```text
+Streamlit
+→ OpenAI Agents SDK
+→ MCP Server
+→ Python / DuckDB / ML Tools
+→ Validator Agent
+```
+
+V1에서는 Tool-using Manufacturing Agent와 별도 Validator를 구현했습니다.
+
+## V2
+
+```text
+Streamlit
+→ LangGraph
+   ├─ Router
+   ├─ MCP Tool Route
+   ├─ Corrective RAG Route
+   ├─ Direct Route
+   ├─ Missing Argument Check
+   ├─ Validator
+   ├─ Re-plan / Retry
+   └─ Safe Fallback
+→ SQLite Checkpoint
+```
+
+V2에서는 OpenAI Agents SDK에 의존하던 orchestration을 LangGraph 상태 그래프로 이전했습니다.
+
+V1 코드는 비교 및 회귀 검증을 위해 repository에 일부 유지하지만,  
+현재 Streamlit V2의 active orchestration은 **LangGraph**입니다.
+
+---
+
+# 4. System Architecture
 
 ```mermaid
 flowchart TD
 
     U[User] --> UI[Streamlit Chat UI]
 
-    UI --> MEM[SQLite Session Memory]
-    MEM --> AGENT[Manufacturing AI Agent]
+    UI --> CP[(SQLite Checkpoint)]
+    CP --> G[LangGraph Manufacturing Agent]
 
-    AGENT --> MCP[MCP Server]
+    G --> B[Begin Turn]
+    B --> R{Router}
 
-    MCP --> T1[Process Summary Tool]
-    MCP --> T2[Condition Comparison Tool]
-    MCP --> T3[Failure Type Tool]
-    MCP --> T4[Failure Prediction Tool]
-    MCP --> T5[Local Explanation Tool]
-    MCP --> T6[Visualization Tools]
+    R -->|Tool| ARG[Argument Check]
+    R -->|RAG| RG[Corrective RAG]
+    R -->|Direct| D[Direct Answer]
+
+    ARG -->|Missing| C[Clarification]
+    C --> E1[END]
+
+    ARG -->|Complete| MCP[MCP Client]
+    MCP --> SERVER[MCP Server]
+
+    SERVER --> T1[Process Summary]
+    SERVER --> T2[Condition Comparison]
+    SERVER --> T3[Failure Type Summary]
+    SERVER --> T4[Failure Prediction]
+    SERVER --> T5[Failure Explanation]
+    SERVER --> T6[Visualization Tools]
 
     T1 --> DB[(DuckDB)]
     T2 --> DB
     T3 --> DB
-
-    T4 --> ML[Random Forest Model]
-
+    T4 --> ML[Random Forest]
     T5 --> ML
     T5 --> DB
-
     T6 --> DB
     T6 --> PLOT[Plotly]
 
-    MCP --> AGENT
+    MCP --> TA[Tool-grounded Answer]
 
-    AGENT --> ANSWER[Agent Answer]
+    RG --> RET[Dense Retrieval]
+    RET --> BGE[BGE-M3]
+    BGE --> Q[(Qdrant)]
+    Q --> RR[BGE Reranker v2 M3]
+    RR --> GR{Document Grade}
+    GR -->|Relevant| GA[RAG Answer]
+    GR -->|Not Relevant| RW[Query Rewrite]
+    RW --> RET
 
-    ANSWER --> VAL[Validator]
+    TA --> V[Validator]
+    GA --> V
+    D --> V
 
-    VAL -->|PASS| FINAL[Final Response]
-    VAL -->|FAIL| REPLAN[Re-plan / Retry]
-
-    REPLAN --> AGENT
+    V -->|PASS| FINAL[Final Response]
+    V -->|FAIL & retry < 2| RP[Re-plan]
+    RP --> R
+    V -->|Max Retry| FB[Safe Fallback]
 
     FINAL --> UI
-
-    EVAL[Automated Eval Harness] --> AGENT
+    FB --> UI
 ```
 
-핵심 실행 흐름은 다음과 같습니다.
+핵심 실행 흐름:
 
 ```text
 User
  ↓
-Streamlit Chat UI
+Streamlit
  ↓
-Persistent Session Memory
+SQLite-backed LangGraph State
  ↓
-LLM Agent
+Router
+ ├─ Tool
+ ├─ RAG
+ └─ Direct
  ↓
-MCP Tool Selection
- ↓
-DuckDB / ML / Visualization
- ↓
-Tool Observation
- ↓
-Agent Answer
+Answer
  ↓
 Validator
  ├─ PASS → Final Answer
  └─ FAIL → Feedback → Re-plan → Retry
+                    └─ Max Retry → Safe Fallback
 ```
 
 ---
 
-# 4. Dataset
+# 5. Dataset
 
 ## AI4I 2020 Predictive Maintenance Dataset
 
-UCI Machine Learning Repository의
+UCI Machine Learning Repository의  
 **AI4I 2020 Predictive Maintenance Dataset**을 사용했습니다.
-
-데이터 규모:
 
 ```text
 Samples: 10,000
 Columns: 14
+Failure Samples: 339
+Failure Rate: 3.39%
 ```
 
-주요 입력 변수:
+주요 Model Feature:
 
 | Feature | Description |
 |---|---|
@@ -272,24 +308,16 @@ Columns: 14
 Machine failure
 ```
 
-전체 데이터의 고장 비율은 약 **3.39%**로 불균형 데이터입니다.
+`TWF`, `HDF`, `PWF`, `OSF`, `RNF`는 세부 고장 유형 Label이므로  
+`Machine failure` 예측 Feature에서는 제외해 **Target Leakage**를 방지했습니다.
 
-```text
-Normal : 9,661
-Failure:   339
-```
-
-TWF, HDF, PWF, OSF, RNF는 세부 고장 유형 Label이므로
-`Machine failure` 예측 Feature에서는 제외하여
-**Target Leakage를 방지**했습니다.
-
-또한 UID와 Product ID 역시 Model Feature에서는 제외했습니다.
+`UID`, `Product ID` 역시 Model Feature에서 제외했습니다.
 
 ---
 
-# 5. Exploratory Data Analysis
+# 6. Exploratory Data Analysis
 
-정상 데이터와 고장 데이터를 비교한 주요 평균값은 다음과 같습니다.
+정상 데이터와 고장 데이터의 주요 평균값:
 
 | Feature | Normal Mean | Failure Mean |
 |---|---:|---:|
@@ -299,7 +327,7 @@ TWF, HDF, PWF, OSF, RNF는 세부 고장 유형 Label이므로
 | Torque | 39.63 | 50.17 |
 | Tool wear | 106.69 | 143.78 |
 
-특히 다음 변수에서 정상 / 고장 그룹의 차이가 상대적으로 크게 나타났습니다.
+차이가 상대적으로 크게 나타난 변수:
 
 ```text
 Torque
@@ -307,15 +335,13 @@ Tool wear
 Rotational speed
 ```
 
-단, 이는 **그룹 간 통계적 차이**이며
-해당 변수가 실제 고장의 원인이라는 인과관계를 의미하지 않습니다.
+단, 이는 **그룹 간 통계적 차이**이며 물리적 인과관계를 의미하지 않습니다.
 
 ---
 
-# 6. Failure Prediction Model
+# 7. Failure Prediction Model
 
-설비 고장 여부를 예측하기 위해
-**Random Forest Classifier**를 사용했습니다.
+설비 고장 여부를 예측하기 위해 **Random Forest Classifier**를 사용했습니다.
 
 입력 Feature:
 
@@ -328,13 +354,11 @@ Torque
 Tool wear
 ```
 
-불균형 데이터를 고려하기 위해:
+불균형 데이터 대응:
 
 ```python
 class_weight="balanced"
 ```
-
-를 적용했습니다.
 
 ## Test Performance
 
@@ -354,50 +378,27 @@ Confusion Matrix:
  [  37   31]]
 ```
 
-해석:
+Accuracy와 Precision은 높지만 Failure Recall은 **0.4559**입니다.
 
-```text
-True Negative  : 1929
-False Positive : 3
-False Negative : 37
-True Positive  : 31
-```
-
-Accuracy와 Precision은 높지만
-Failure Recall은 **0.4559**입니다.
-
-즉 실제 고장 Sample 중 일부를 놓치는 한계가 있으므로,
-실제 제조 현장 적용 시에는 False Negative 비용을 고려한
+따라서 실제 제조 현장 적용에서는 False Negative 비용을 고려한  
 **Threshold Calibration / Cost-sensitive Optimization**이 필요합니다.
 
 ---
 
-# 7. Local Failure Explanation
+# 8. Local Failure Explanation
 
-SHAP 대신
+SHAP 대신  
 **One-Feature-at-a-Time Perturbation 기반 Local Sensitivity Analysis**를 구현했습니다.
 
-특정 입력값에서 하나의 Feature만
-동일 Product Type 정상 데이터의 중앙값으로 변경한 뒤
-고장 예측확률의 변화를 측정합니다.
+특정 입력에서 하나의 Feature만 동일 Product Type 정상 데이터의 중앙값으로 변경한 뒤  
+고장 예측확률이 얼마나 변하는지 측정합니다.
 
 예:
 
 ```text
-Input Condition
-
-Type = L
-Torque = 65
-Tool wear = 200
-Rotational speed = 1300
-
 Original Failure Probability
 = 80.33%
-```
 
-Torque만 동일 Type 정상 중앙값으로 변경:
-
-```text
 Torque
 65.0 → 39.7
 
@@ -416,18 +417,16 @@ Risk Impact
 | Tool wear | 200 | 107 | +51.00%p |
 | Rotational speed | 1300 | 1508 | +29.00%p |
 
-이 값은 **SHAP Value 또는 인과효과가 아닙니다.**
+이 값은 **SHAP Value나 인과효과가 아닙니다.**
 
-정상 Reference로 입력을 변경했을 때
-ML Model의 예측확률이 얼마나 변하는지를 나타내는
-**Local Model Sensitivity**입니다.
+정상 Reference로 한 변수를 변경했을 때  
+ML Model의 예측확률이 얼마나 변하는지를 나타내는 **Local Model Sensitivity**입니다.
 
 ---
 
-# 8. MCP Tools
+# 9. MCP Tools
 
-제조 분석 기능을 MCP Server를 통해
-총 **8개의 Tool**로 제공합니다.
+MCP Server를 통해 총 **8개의 제조 분석 Tool**을 제공합니다.
 
 | MCP Tool | Purpose |
 |---|---|
@@ -440,298 +439,294 @@ ML Model의 예측확률이 얼마나 변하는지를 나타내는
 | `failure_rate_by_type_chart` | Product Type별 고장률 시각화 |
 | `risk_driver_chart` | Local Risk Driver 시각화 |
 
-Agent는 사용자의 자연어 요청을 분석하여
-필요한 MCP Tool을 자동으로 선택합니다.
+V2에서는 OpenAI Agents SDK의 MCP wrapper 대신  
+**MCP Python SDK를 직접 사용해 Tool discovery / invocation을 수행**합니다.
+
+---
+
+# 10. Corrective RAG
+
+제조·보전·안전 관련 공식 문서를 대상으로 RAG pipeline을 구성했습니다.
+
+## Knowledge Sources
+
+- UCI AI4I 2020 Predictive Maintenance Dataset documentation
+- NASA Reliability-Centered Maintenance Guide
+- DOE Operations & Maintenance Best Practices
+- NIST AMS 400-1
+- OSHA Lockout/Tagout Fact Sheet
+
+원본 PDF는 repository에 포함하지 않으며  
+`knowledge/raw/` 아래에 사용자가 별도로 배치하도록 구성합니다.
+
+## RAG Pipeline
+
+```text
+Question
+ ↓
+Query Preparation
+ ↓
+BGE-M3 Embedding
+ ↓
+Qdrant Dense Retrieval Top-15
+ ↓
+BGE Reranker v2 M3
+ ↓
+Top-5
+ ↓
+Document Relevance Grading
+ ├─ Relevant → Answer Generation
+ └─ Not Relevant → Query Rewrite → Retrieve Again
+```
+
+Query Rewrite 최대 횟수는 **2회**입니다.
+
+답변은 검색된 문서만 근거로 생성하며 다음과 같은 citation을 사용합니다.
+
+```text
+[source | p.page | section]
+```
+
+AI4I 문서의 고장 생성 조건은 실제 제조 공정의 보편적 물리 임계값이 아니라  
+**synthetic dataset generation rule**로 명시하도록 제한합니다.
+
+---
+
+# 11. RAG Retrieval Evaluation
+
+사전 정의한 6개 Retrieval Evaluation Query를 사용했습니다.
+
+## Dense Retrieval
+
+| Metric | Result |
+|---|---:|
+| Hit@5 | 100% |
+| Hit@10 | 100% |
+| Hit@15 | 100% |
+| MRR | 0.722 |
+
+## Reranker
+
+| Metric | Result |
+|---|---:|
+| Hit@1 | 100% |
+| Hit@3 | 100% |
+| Hit@5 | 100% |
+| MRR | 1.000 |
+
+> 위 수치는 **사전 정의한 6개 Retrieval Evaluation Query에 대한 결과**이며,  
+> 일반적인 RAG 정확도가 100%라는 의미는 아닙니다.
+
+---
+
+# 12. Missing Argument Validation
+
+예측 Tool은 다음 6개 입력을 필요로 합니다.
+
+```text
+product_type
+air_temperature
+process_temperature
+rotational_speed
+torque
+tool_wear
+```
+
+입력이 부족하면 Tool을 실행하지 않습니다.
+
+```text
+Router
+ ↓
+Argument Check
+ ├─ Complete → MCP Tool 실행
+ └─ Missing → 사용자에게 누락값만 요청
+```
 
 예:
 
 ```text
 User
-"Torque가 정상과 고장에서 어떻게 달라?"
+Product Type L이고 Torque가 65인데 고장 위험을 예측해줘.
 
-        ↓
-
-Manufacturing Agent
-
-        ↓
-
-compare_process_condition(
-    feature="Torque"
-)
-
-        ↓
-
-DuckDB
-
-        ↓
-
-Structured Result
+Agent
+Air temperature,
+Process temperature,
+Rotational speed,
+Tool wear 값이 추가로 필요합니다.
 ```
+
+누락된 값을 임의 생성하지 않도록 설계했습니다.
 
 ---
 
-# 9. Multi-Tool Agent
+# 13. Validator & Re-planning
 
-복합적인 사용자 요청에서는
-여러 MCP Tool을 연속적으로 사용할 수 있습니다.
+Tool / RAG / Direct 답변은 LangGraph의 Validator Node에서 검증합니다.
 
-예:
-
-```text
-User
-"고장 위험을 예측하고 왜 위험한지도 설명해줘."
-```
-
-Agent 실행:
+주요 검증 기준:
 
 ```text
-1. predict_machine_failure
-
-2. Tool Observation
-
-3. explain_machine_failure
-
-4. Tool Observation
-
-5. Final Answer
-```
-
-LLM이 제조 관련 수치를 직접 생성하는 대신
-**Python / ML Tool이 계산한 실제 결과를 근거로 답변**하도록 설계했습니다.
-
----
-
-# 10. Validator & Re-planning Harness
-
-Main Agent가 생성한 답변을
-별도 Validator Agent가 검증합니다.
-
-Validator 평가 항목:
-
-```text
-Grounded
-Complete
+Grounding
+Completeness
 Safe Interpretation
+Capability Boundary
 ```
 
-### Grounded
+예:
 
-제조 관련 수치가 실제 Tool Result와 일치하는지 확인합니다.
-
-### Complete
-
-사용자가 요구한 분석 항목을 빠짐없이 처리했는지 확인합니다.
-
-### Safe Interpretation
-
-Random Forest 예측을 실제 고장 확정 판정처럼 표현하거나,
-Local Sensitivity 결과를 인과관계처럼 표현하지 않는지 확인합니다.
+- Tool Result에 없는 제조 수치를 생성하지 않는가
+- ML 예측을 실제 물리적 고장 사실로 표현하지 않는가
+- Local Sensitivity를 SHAP 또는 인과효과로 과장하지 않는가
+- RAG 답변이 검색 문서 근거를 벗어나지 않는가
+- 구현되지 않은 OEE / takt / inventory / demand forecasting 기능을 주장하지 않는가
 
 검증 흐름:
 
 ```text
-Main Agent
- ↓
-MCP Tools
- ↓
 Answer
  ↓
 Validator
- ├─ PASS
- │    ↓
- │  Final Answer
- │
+ ├─ PASS → END
  └─ FAIL
       ↓
    Feedback
       ↓
    Re-plan
       ↓
-   Agent Retry
+   Router
+      ↓
+   Answer Regeneration
 ```
 
-Retry 횟수에는 제한을 두어
-무한 Agent Loop를 방지했습니다.
+재생성 시 이전 `validation_feedback`을 직접 답변 생성 Prompt에 전달해  
+동일 오류를 반복하지 않도록 했습니다.
+
+최대 Retry는 **2회**이며, 이후에도 검증에 실패하면 Safe Fallback으로 종료합니다.
 
 ---
 
-# 11. Persistent Session Memory
+# 14. Durable Multi-turn Memory
 
-**SQLiteSession** 기반 Persistent Conversation Memory를 적용했습니다.
-
-예:
+V2는 LangGraph의 **AsyncSqliteSaver**를 사용합니다.
 
 ```text
-User
-Type L, Torque 65, Tool wear 200 ... 고장 위험을 예측해줘.
-
-Agent
-고장확률은 80.33%입니다.
-
-User
-그럼 왜 위험해?
-
-Agent
-Torque, Tool wear, Rotational speed가
-주요 Risk Driver입니다.
+database/langgraph_checkpoints.sqlite
 ```
 
-두 번째 요청에서 제조조건을 다시 입력하지 않았지만
-이전 Conversation Context를 활용하여
-`explain_machine_failure` Tool에 필요한 입력값을 재사용합니다.
-
-Session DB:
+같은 `thread_id`를 사용하면:
 
 ```text
-database/agent_sessions.db
+Turn 1
+Product Type L의 고장 위험을 예측해줘.
+→ 5개 입력값 추가 요청
+→ Pending State SQLite 저장
+
+Python / Streamlit 종료
+
+Turn 2
+나머지 5개 값만 입력
+→ SQLite에서 Product Type L 복원
+→ Prediction Tool 실행
 ```
 
-는 Runtime 파일이며
-Git Repository에는 포함하지 않습니다.
+실제 테스트에서 Python 프로세스와 Streamlit 서버를 완전히 재시작한 뒤에도  
+이전 pending context가 복원되는 것을 확인했습니다.
+
+현재 LangGraph state는 영속화되지만, Streamlit의 과거 Chat Bubble 자체는 별도 UI history persistence가 필요합니다.
 
 ---
 
-# 12. Automated Evaluation Harness
+# 15. Automated Agent Evaluation
 
-Agent 동작을 자동 검증하기 위해
-Custom Eval Harness를 구현했습니다.
+V2 LangGraph Agent에 대해 사전 정의한 **6개 제조 Agent Evaluation Case**를 실행했습니다.
 
-평가 항목:
+평가 범위:
 
 ```text
-Required Tool Selection
-Forbidden Tool Compliance
-Answer Fact Accuracy
-Validator Pass Rate
-Tool Efficiency
-Missing-input Safety
+Process Summary
+Normal / Failure Comparison
+Failure Prediction
+Prediction + Explanation
+Missing Input Safety
+Visualization
 ```
 
-현재 구축한 **6개 Regression Eval Case** 결과:
+결과:
 
 | Metric | Result |
 |---|---:|
 | Eval Cases | 6 |
 | Passed Cases | 6 |
-| Overall Pass Rate | 100% |
-| Required Tool Accuracy | 100% |
+| Predefined Eval Pass Rate | 100% |
+| Required Tool Success Rate | 100% |
 | Forbidden Tool Compliance | 100% |
-| Answer Fact Accuracy | 100% |
-| Validator Pass Rate | 100% |
+| Answer Pattern Success Rate | 100% |
+| Validator / Clarification Success Rate | 100% |
 | Tool Efficiency Rate | 100% |
-| Average Tool Calls | 1.17 |
+| Average MCP Tool Calls | 0.83 |
 
-테스트 예시:
-
-### Process Summary
-
-```text
-"Product Type L의 전체 샘플 수와 고장률을 알려줘."
-```
-
-Expected Tool:
-
-```text
-process_summary
-```
-
-### Missing Input Safety
-
-```text
-"Product Type L이고 Torque가 65인데 고장 위험을 예측해줘."
-```
-
-필수 입력값이 부족하므로
-Agent가 값을 임의 추정하지 않고 사용자에게 추가 입력을 요청해야 합니다.
-
-이 수치는 **사전 정의된 6개 Regression Eval Case에 대한 결과**이며,
-일반적인 Agent 정확도가 100%라는 의미는 아닙니다.
-
-향후 Eval Dataset을 확대하여
-다양한 Failure Case와 Adversarial Query를 추가할 수 있습니다.
+> 위 결과는 **사전 정의한 6개 제조 Agent Evaluation Case에서 6/6을 통과했다는 의미**이며,  
+> 전체 Agent 정확도가 100%라는 의미는 아닙니다.
 
 ---
 
-# 13. Streamlit Application
+# 16. Streamlit Application
 
-Streamlit 기반 Chat UI를 제공합니다.
-
-UI에서 다음 기능을 확인할 수 있습니다.
+Streamlit 기반 Chat UI에서 다음 기능을 확인할 수 있습니다.
 
 ```text
 Natural Language Query
 Manufacturing Data Analysis
 Failure Prediction
 Local Risk Explanation
+Corrective RAG
 MCP Tool Trace
+Missing Argument Clarification
 Interactive Plotly Visualization
 Validation Result
-Persistent Conversation Memory
+Durable LangGraph Memory
 ```
 
-각 Agent Response 아래에서
-실제로 호출한 MCP Tool을 확인할 수 있습니다.
-
-예:
-
-```text
-Used MCP Tools
-
-1. predict_machine_failure
-2. explain_machine_failure
-```
-
-Validator 결과도 UI에서 확인할 수 있습니다.
-
-```text
-Validation: PASS
-
-Attempts: 1
-Grounded: True
-Complete: True
-Safe Interpretation: True
-```
-
-이를 통해 Agent 내부 실행 과정을 일부 관찰할 수 있는
-기본적인 **Agent Observability**를 구현했습니다.
+각 답변에서 실제 Tool 실행과 Validation 결과를 확인할 수 있습니다.
 
 ---
 
-# 14. Tech Stack
+# 17. Tech Stack
 
 | Category | Technology |
 |---|---|
 | Language | Python 3.12 |
-| Agent Framework | OpenAI Agents SDK |
+| Agent Orchestration | LangGraph 0.6.11 |
+| LLM API | OpenAI Python SDK |
 | Tool Protocol | MCP |
+| Embedding | BAAI/bge-m3 |
+| Vector DB | Qdrant Local Mode |
+| Reranker | BAAI/bge-reranker-v2-m3 |
+| Document Parsing | pypdf |
 | Data Processing | pandas / NumPy |
 | Analytics Database | DuckDB |
 | Machine Learning | scikit-learn |
 | Prediction Model | Random Forest |
 | Visualization | Plotly |
-| Session Memory | SQLite |
-| Structured Validation | Pydantic |
+| Durable Memory | LangGraph AsyncSqliteSaver / SQLite |
 | Evaluation | Custom Eval Harness |
 | UI | Streamlit |
 | Version Control | Git / GitHub |
 
+V1 compatibility를 위해 OpenAI Agents SDK 관련 코드와 dependency 일부는 repository에 유지합니다.
+
 ---
 
-# 15. Project Structure
+# 18. Project Structure
 
 ```text
 manufacturing-ai-agent/
 │
 ├── agent/
-│   ├── __init__.py
-│   ├── manufacturing_agent.py
-│   ├── validated_agent.py
-│   ├── ui_harness.py
-│   ├── test_agent_tools.py
-│   └── test_session_memory.py
+│   └── ...                         # V1 Agents SDK implementation
 │
 ├── app/
-│   └── streamlit_app.py
+│   └── streamlit_app.py            # LangGraph V2 Streamlit UI
 │
 ├── data/
 │   └── .gitkeep
@@ -741,23 +736,48 @@ manufacturing-ai-agent/
 │
 ├── docs/
 │   └── images/
-│       ├── 01_Manufacturing_AI_Agent_Main_UI.png
-│       ├── 02_Failure_Prediction_Local_Explanation.png
-│       ├── 03_MCP_Tool_Validation.png
-│       ├── 04_Persistent_Session_Memory.png
-│       └── 05_Torque_Normal_vs_Failure_Visualization.png
+│       ├── 01_streamlit_langgraph_v2_tool_rag.png
+│       ├── 02_durable_memory_prediction_flow.png
+│       └── 03_torque_distribution_visualization.png
 │
 ├── evals/
-│   ├── __init__.py
 │   ├── eval_cases.py
-│   ├── run_evals.py
+│   ├── run_evals.py                # V1 Eval
+│   ├── rag_eval_cases.py
+│   ├── run_rag_evals.py
+│   ├── run_v2_evals.py
 │   └── results/
-│       └── .gitkeep
+│
+├── graph/
+│   ├── state.py
+│   ├── rag_graph.py
+│   ├── manufacturing_state.py
+│   ├── mcp_client.py
+│   ├── manufacturing_graph.py
+│   ├── persistent_graph.py
+│   ├── test_manufacturing_routes.py
+│   ├── test_memory_flow.py
+│   ├── test_replan_flow.py
+│   └── test_sqlite_memory.py
+│
+├── knowledge/
+│   └── raw/
+│       └── README.md
 │
 ├── mcp_server/
-│   ├── __init__.py
 │   ├── server.py
 │   └── test_server.py
+│
+├── rag/
+│   ├── document_loader.py
+│   ├── chunker.py
+│   ├── embeddings.py
+│   ├── vector_store.py
+│   ├── ingest.py
+│   ├── retriever.py
+│   ├── qdrant_retriever.py
+│   ├── reranker.py
+│   └── ...
 │
 ├── models/
 │   └── .gitkeep
@@ -765,14 +785,11 @@ manufacturing-ai-agent/
 ├── reports/
 │   ├── figures/
 │   └── generated/
-│       └── .gitkeep
 │
 ├── src/
-│   ├── __init__.py
 │   ├── download_data.py
 │   ├── eda.py
 │   ├── setup_database.py
-│   ├── check_database.py
 │   ├── analysis_tools.py
 │   ├── train_model.py
 │   ├── prediction_tool.py
@@ -781,38 +798,40 @@ manufacturing-ai-agent/
 │
 ├── .env.example
 ├── .gitignore
-├── README.md
 ├── requirements.txt
+├── requirements-lock.txt
+├── README.md
 └── setup_project.py
 ```
 
-Runtime에서 다음 파일이 생성됩니다.
+Runtime에서 생성되며 Git Repository에 포함하지 않는 파일:
 
 ```text
-data/ai4i2020.csv
-database/manufacturing.duckdb
-database/agent_sessions.db
-models/failure_model.pkl
+data/*.csv
+database/qdrant/
+database/langgraph_checkpoints.sqlite*
+database/streamlit_session.json
+database/*.duckdb
+models/*.pkl
+models/*.joblib
 reports/generated/*.html
-evals/results/*
+evals/results/*.json
+evals/results/*.csv
+knowledge/raw/*.pdf
 ```
-
-이 파일들은 Git Repository에 포함하지 않습니다.
 
 ---
 
-# 16. Installation
+# 19. Installation
 
-## 16.1 Repository Clone
+## 19.1 Repository Clone
 
 ```bash
 git clone https://github.com/dogsa33/manufacturing-ai-agent.git
 cd manufacturing-ai-agent
 ```
 
----
-
-## 16.2 Virtual Environment
+## 19.2 Virtual Environment
 
 Windows PowerShell:
 
@@ -821,158 +840,150 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 ```
 
----
-
-## 16.3 Dependencies
+## 19.3 Dependencies
 
 ```powershell
 python -m pip install -r requirements.txt
 ```
 
----
+`requirements-lock.txt`에는 개발 및 검증 당시의 전체 Python environment snapshot을 보존합니다.
 
-## 16.4 OpenAI API Key
-
-PowerShell 환경변수로 설정합니다.
-
-```powershell
-$env:OPENAI_API_KEY="YOUR_API_KEY"
-```
-
-확인:
-
-```powershell
-python -c "import os; print(bool(os.getenv('OPENAI_API_KEY')))"
-```
-
-정상이라면:
+주요 compatibility pin:
 
 ```text
-True
+pandas==2.2.3
+scikit-learn==1.5.2
+langgraph==0.6.11
+langgraph-checkpoint-sqlite==3.0.1
+aiosqlite==0.21.0
 ```
 
-가 출력됩니다.
+## 19.4 OpenAI API Key
 
-> 실제 API Key를 `.env.example`, README, Source Code에 저장하지 마세요.
-
-`.env.example`에는 다음 Placeholder만 포함합니다.
+`.env.example`:
 
 ```env
 OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_MODEL=gpt-5.6-luna
 ```
+
+실제 `.env` 파일:
+
+```env
+OPENAI_API_KEY=YOUR_API_KEY
+OPENAI_MODEL=gpt-5.6-luna
+```
+
+실제 API Key는 Git Repository에 포함하지 않습니다.
 
 ---
 
-# 17. Data / Model Setup
+# 20. Data / Model Setup
 
-## Quick Setup
-
-Dataset 다운로드, DuckDB 생성,
-Random Forest 학습을 한 번에 실행할 수 있습니다.
+Dataset 다운로드, DuckDB 생성, Random Forest 학습:
 
 ```powershell
 python setup_project.py
 ```
 
-실행 과정:
-
-```text
-AI4I Dataset Download
-        ↓
-DuckDB Setup
-        ↓
-Random Forest Training
-        ↓
-failure_model.pkl
-```
-
----
-
-## Individual Setup
-
-각 단계를 별도로 실행할 수도 있습니다.
-
-### Dataset Download
+개별 실행:
 
 ```powershell
 python -m src.download_data
-```
-
-### DuckDB Setup
-
-```powershell
 python -m src.setup_database
-```
-
-### Exploratory Data Analysis
-
-```powershell
 python -m src.eda
-```
-
-### ML Model Training
-
-```powershell
 python -m src.train_model
 ```
 
 ---
 
-# 18. Run MCP Test
+# 21. RAG Setup
 
-MCP Server와 Tool Registration,
-Structured Output을 테스트합니다.
+공식 PDF 문서를 `knowledge/raw/`에 배치한 뒤 ingestion을 실행합니다.
+
+```powershell
+python -m rag.ingest
+```
+
+RAG pipeline은:
+
+```text
+PDF Loading
+→ Section-aware Chunking
+→ BGE-M3 Embedding
+→ Qdrant Storage
+```
+
+순서로 구축됩니다.
+
+Local Qdrant data는 Git Repository에 포함하지 않습니다.
+
+---
+
+# 22. Run Tests & Evaluations
+
+## MCP Tool Test
 
 ```powershell
 python -m mcp_server.test_server
 ```
 
-정상 실행 시 총 8개의 MCP Tool을 확인할 수 있습니다.
+## LangGraph Route Regression
 
-```text
-process_summary
-compare_process_condition
-failure_type_summary
-predict_machine_failure
-explain_machine_failure
-feature_distribution_chart
-failure_rate_by_type_chart
-risk_driver_chart
+```powershell
+python -m graph.test_manufacturing_routes
 ```
 
----
+## Multi-turn Memory
 
-# 19. Run Agent Evaluation
+```powershell
+python -m graph.test_memory_flow
+```
 
-Automated Eval Harness를 실행합니다.
+## Validator / Re-plan / Safe Fallback
+
+```powershell
+python -m graph.test_replan_flow
+```
+
+## SQLite Durable Memory
+
+```powershell
+python -m graph.test_sqlite_memory phase1
+python -m graph.test_sqlite_memory phase2
+```
+
+## RAG Retrieval Evaluation
+
+```powershell
+python -m evals.run_rag_evals
+```
+
+## LangGraph V2 Agent Evaluation
+
+```powershell
+python -m evals.run_v2_evals
+```
+
+V1 비교용 Eval:
 
 ```powershell
 python -m evals.run_evals
 ```
 
-Eval 결과는 다음 위치에 Runtime Report로 생성됩니다.
-
-```text
-evals/results/
-```
-
-평가 항목:
-
-```text
-Tool Selection
-Forbidden Tool Compliance
-Fact Accuracy
-Validator Pass
-Tool Efficiency
-Missing-input Safety
-```
-
 ---
 
-# 20. Run Streamlit Application
+# 23. Run Streamlit Application
 
 ```powershell
 python -m streamlit run .\app\streamlit_app.py
+```
+
+`.streamlit/config.toml`:
+
+```toml
+[server]
+fileWatcherType = "none"
 ```
 
 기본 Local URL:
@@ -981,55 +992,56 @@ python -m streamlit run .\app\streamlit_app.py
 http://localhost:8501
 ```
 
-브라우저에서 접속하면 Manufacturing AI Agent Chat UI를 사용할 수 있습니다.
-
 ---
 
-# 21. Design Principles
+# 24. Design Principles
 
-본 프로젝트에서는 LLM과 계산 Tool의 역할을 분리했습니다.
+본 프로젝트에서는 LLM과 계산 / 검색 모듈의 역할을 분리했습니다.
 
 ```text
-LLM
+LLM / LangGraph
 → User Intent Understanding
+→ Routing
 → Tool Selection
-→ Multi-step Tool Use
-→ Natural Language Explanation
+→ Clarification
+→ Answer Synthesis
+→ Validation / Re-planning
 
-
-Python / ML
+Python / ML / Retrieval
 → Data Query
 → Statistics
 → Prediction
 → Local Sensitivity
 → Visualization
+→ Document Retrieval
+→ Reranking
 ```
 
-LLM이 제조 데이터의 수치를 직접 추측하지 않고
-결정론적인 Python / ML Tool을 통해 값을 조회하도록 설계했습니다.
+LLM이 제조 수치를 임의 생성하지 않고  
+**MCP Tool Result 또는 검색 문서 근거를 사용**하도록 설계했습니다.
 
 또한 Agent의 자율성을 무제한으로 높이는 대신:
 
 ```text
 Tool Allow-list
-Structured Output
+Required Argument Validation
+Document Grounding
 Validator
 Retry Limit
-Session State
+Safe Fallback
+Durable State
 Automated Evaluation
 ```
 
-을 적용하여 **Controlled Autonomy**를 지향했습니다.
+을 적용해 **Controlled Autonomy**를 지향했습니다.
 
 ---
 
-# 22. Limitations
+# 25. Limitations
 
-현재 프로젝트의 주요 한계는 다음과 같습니다.
+## 1. Failure Recall
 
-### 1. Failure Recall
-
-현재 Random Forest Model의 Failure Recall은:
+현재 Random Forest의 Failure Recall은:
 
 ```text
 0.4559
@@ -1037,28 +1049,25 @@ Automated Evaluation
 
 입니다.
 
-False Negative 감소를 위한
-Threshold Optimization 또는 Cost-sensitive Learning이 필요합니다.
+실제 고장 Sample 중 일부를 놓치므로  
+False Negative 감소를 위한 Threshold Optimization 또는 Cost-sensitive Learning이 필요합니다.
 
-### 2. Explanation Method
+## 2. Explanation Method
 
-현재 Local Explanation은 SHAP 기반 Feature Attribution이 아니라
+현재 Local Explanation은 SHAP 기반 Feature Attribution이 아니라  
 **One-Feature-at-a-Time Perturbation** 방식입니다.
 
-따라서 Feature Contribution의 합산이나
-인과적 해석에는 사용할 수 없습니다.
+따라서 Feature Contribution의 합산이나 인과적 해석에는 사용할 수 없습니다.
 
-### 3. Small Evaluation Set
+## 3. Small Evaluation Set
 
-현재 Automated Eval은
-6개의 사전 정의 Regression Case를 기반으로 합니다.
+현재 Agent Eval과 Retrieval Eval 모두 각각 **6개의 사전 정의 Case / Query**를 기반으로 합니다.
 
-보다 신뢰도 높은 Agent 평가를 위해서는
-Eval Dataset 확대가 필요합니다.
+보다 신뢰도 높은 평가를 위해서는 Eval Dataset 확대와 Adversarial Query 추가가 필요합니다.
 
-### 4. Public Dataset PoC
+## 4. Public Dataset PoC
 
-현재 프로젝트는 하나의 공개 제조 Dataset을 기반으로 한 PoC이며,
+현재 프로젝트는 공개 제조 Dataset을 기반으로 한 PoC입니다.
 
 ```text
 Real-time Sensor Stream
@@ -1070,59 +1079,48 @@ Equipment Log
 
 등의 실제 제조 시스템 연동은 포함하지 않습니다.
 
-### 5. Model Architecture
+## 5. RAG Scope
 
-현재 Agent Architecture는:
+현재 RAG는 사전에 구축한 5개 공식 문서 corpus에 한정됩니다.
 
-```text
-Main Agent
-+
-Validator Agent
-```
+검색 문서에 없는 정보는 답변 근거로 사용하지 않도록 설계했습니다.
 
-구조입니다.
+## 6. UI History Persistence
 
-기능상 필요하지 않은 Multi-Agent Complexity는 의도적으로 적용하지 않았습니다.
+LangGraph state와 pending context는 SQLite에 저장되지만  
+Streamlit 서버 재시작 후 이전 Chat Bubble 전체를 다시 렌더링하는 UI history persistence는 아직 별도 구현 대상입니다.
 
 ---
 
-# 23. Future Work
-
-향후 다음 방향으로 확장할 수 있습니다.
+# 26. Future Work
 
 ```text
 Threshold Optimization
 Cost-sensitive Failure Detection
-Time-series Sensor Monitoring
-Real-time Equipment Data Integration
-MES / SCADA Integration
-SOP / Manual RAG
-MCP Streamable HTTP Deployment
 Expanded Agent Evaluation Dataset
 Adversarial Agent Evaluation
+Chat UI History Persistence
+Production-grade Checkpoint / DB
+Persistent MCP Session Optimization
+Real-time Equipment Data Integration
+MES / SCADA Integration
+Time-series Sensor Monitoring
 Human Approval for High-risk Actions
-Durable Workflow / Checkpoint
 Production Observability
 Docker Containerization
 ```
 
-Docker는 향후 Docker 사용이 가능한 환경에서
-Build / Runtime 검증 후 추가할 예정입니다.
-
 ---
 
-# 24. Project Goal
+# 27. Project Goal
 
-이 프로젝트의 목표는 단순히
-Machine Learning Model의 성능을 높이는 것이 아닙니다.
+이 프로젝트의 목표는 단순히 Machine Learning Model의 성능을 높이는 것이 아닙니다.
 
 > **제조공정 문제를 Data와 Tool로 구조화하고,  
-> LLM Agent가 이를 신뢰성 있게 활용할 수 있는  
+> LLM Agent가 데이터·모델·기술문서를 신뢰성 있게 활용할 수 있는  
 > Manufacturing AI Agent Architecture를 구현하는 것**
 
-을 목표로 했습니다.
-
-핵심 설계 방향은 다음과 같습니다.
+핵심 구성:
 
 ```text
 Manufacturing Domain
@@ -1133,12 +1131,14 @@ Machine Learning
         +
 MCP Tool Architecture
         +
-LLM Agent
+Corrective RAG
+        +
+LangGraph Orchestration
         +
 Validation / Evaluation
+        +
+Durable State
 ```
 
-이를 통해 단순 Chatbot이 아니라
-**제조 데이터를 실제로 조회·분석·예측하고,
-실행 결과를 검증할 수 있는 Tool-using Manufacturing AI Agent**
-구현을 목표로 했습니다.
+단순 Chatbot이 아니라  
+**제조 데이터를 실제로 조회·분석·예측하고, 문서를 검색하며, 실행 결과를 검증하고, 실패 시 재계획할 수 있는 Manufacturing AI Agent** 구현을 목표로 했습니다.

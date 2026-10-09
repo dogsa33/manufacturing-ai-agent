@@ -56,6 +56,14 @@ database/*.db-shm
 database/*.db-wal
 database/*.duckdb
 
+# Local Qdrant Vector Database
+database/qdrant/
+
+# LangGraph Persistent Memory
+database/langgraph_checkpoints.sqlite
+database/langgraph_checkpoints.sqlite-*
+database/streamlit_session.json
+
 
 # =========================================================
 # Generated Models
@@ -71,6 +79,7 @@ models/*.joblib
 
 reports/generated/*.html
 reports/figures/*.html
+
 
 # =========================================================
 # Eval Runtime Results
@@ -88,8 +97,22 @@ evals/results/*.csv
 
 
 # =========================================================
+# Legacy / Local Backup
+# =========================================================
+
+requirements_before_langgraph_legacy.txt
+
+
+# =========================================================
 # OS
 # =========================================================
 
 .DS_Store
 Thumbs.db
+
+
+# =========================================================
+# Knowledge Raw Documents
+# =========================================================
+
+knowledge/raw/*.pdf

@@ -113,7 +113,6 @@ EVAL_CASES = [
         ),
 
         "required_tools": [
-            "predict_machine_failure",
             "explain_machine_failure",
         ],
 
@@ -126,7 +125,7 @@ EVAL_CASES = [
             r"29(?:\.0+)?",
         ],
 
-        "max_tool_calls": 2,
+        "max_tool_calls": 1,
     },
 
 
