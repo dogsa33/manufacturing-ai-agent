@@ -1,0 +1,36 @@
+name: Materialize Ontology V3 source
+on:
+  push:
+    branches:
+      - feature/operational-ontology-v3
+permissions:
+  contents: write
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify and extract bundled source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .v3_deploy/payload.part* | base64 --decode > /tmp/ontology-v3-payload.tar.xz
+          echo '44e29c7f13ebd5264367328e877e48a4355526006ced428d137c036e4d01329b  /tmp/ontology-v3-payload.tar.xz' | sha256sum --check
+          tar -xJf /tmp/ontology-v3-payload.tar.xz -C .
+          python install_v3.py --check
+          python install_v3.py
+          python -m unittest discover -s tests -p 'test_*.py' -v
+          python -m compileall -q ontology_v3 graph/manufacturing_graph.py graph/manufacturing_state.py mcp_server/server.py
+      - name: Commit integrated V3 sources to feature branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .v3_deploy
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "feat(v3): integrate operational ontology with existing agent"
+            git push origin HEAD:feature/operational-ontology-v3
+          fi
