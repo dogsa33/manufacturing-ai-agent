@@ -28,6 +28,12 @@ from langgraph.graph import (
 
 from langgraph.checkpoint.memory import MemorySaver
 
+from ontology_v3.graph_nodes import (
+    detect_ontology_request, ontology_lookup_node, ontology_predict_node,
+    ontology_policy_node, route_after_ontology_policy, ontology_propose_node,
+    ontology_respond_node, ontology_verify_node,
+)
+
 # ============================================================
 # Configuration
 # ============================================================
@@ -153,6 +159,11 @@ async def begin_turn(
 
     return {
         "route": "",
+        "ontology_equipment_id": "",
+        "ontology_action_requested": False,
+        "ontology_context": {}, "ontology_predictions": [],
+        "ontology_decision": {}, "ontology_proposal": {},
+        "ontology_error": "", "ontology_trace": [],
         "tool_name": "",
         "tool_arguments": {},
 
@@ -185,6 +196,19 @@ async def route_query(
 ) -> dict:
 
     print("\n[NODE] router")
+
+    # V3: An explicit synthetic Equipment ID enters a fixed Ontology workflow.
+    ontology_request = detect_ontology_request(state.get("query", ""))
+    if ontology_request is not None:
+        return {
+            "route": "ontology",
+            "ontology_equipment_id": ontology_request["equipment_id"],
+            "ontology_action_requested": ontology_request["action_requested"],
+            "ontology_context": {}, "ontology_predictions": [],
+            "ontology_decision": {}, "ontology_proposal": {},
+            "ontology_error": "", "ontology_trace": [],
+            "retry_count": 0,
+        }
 
     query = state["query"]
 
@@ -1609,6 +1633,9 @@ def choose_route(
     if route == "rag":
         return "rag"
 
+    if route == "ontology":
+        return "ontology"
+
     return "direct"
 
 
@@ -1767,6 +1794,21 @@ def build_manufacturing_graph(
     # START → Router
     # --------------------------------------------------------
 
+    # V3 Ontology branch: deterministic multi-step flow and postcondition verifier.
+    builder.add_node("ontology_lookup", ontology_lookup_node)
+    builder.add_node("ontology_predict", ontology_predict_node)
+    builder.add_node("ontology_policy", ontology_policy_node)
+    builder.add_node("ontology_propose", ontology_propose_node)
+    builder.add_node("ontology_respond", ontology_respond_node)
+    builder.add_node("ontology_verify", ontology_verify_node)
+    builder.add_edge("ontology_lookup", "ontology_predict")
+    builder.add_edge("ontology_predict", "ontology_policy")
+    builder.add_conditional_edges("ontology_policy", route_after_ontology_policy,
+                                  {"propose": "ontology_propose", "respond": "ontology_respond"})
+    builder.add_edge("ontology_propose", "ontology_respond")
+    builder.add_edge("ontology_respond", "ontology_verify")
+    builder.add_edge("ontology_verify", END)
+
     builder.add_edge(
         START,
         "begin_turn",
@@ -1788,6 +1830,7 @@ def build_manufacturing_graph(
             "tool": "check_tool_arguments",
             "rag": "rag",
             "direct": "direct",
+            "ontology": "ontology_lookup",
         },
     )
 

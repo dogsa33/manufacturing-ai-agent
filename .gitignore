@@ -116,3 +116,7 @@ Thumbs.db
 # =========================================================
 
 knowledge/raw/*.pdf
+
+# Ontology V3 runtime SQLite DB
+database/ontology_operations.sqlite*
+.v3_install_backups/

@@ -49,6 +49,16 @@ class ManufacturingState(TypedDict, total=False):
     rag_rewrite_count: int
     rag_retrieval_query: str
 
+    # V3 Ontology evidence and human-reviewed Action proposal
+    ontology_equipment_id: str
+    ontology_action_requested: bool
+    ontology_context: dict[str, Any]
+    ontology_predictions: list[dict[str, Any]]
+    ontology_decision: dict[str, Any]
+    ontology_proposal: dict[str, Any]
+    ontology_error: str
+    ontology_trace: list[str]
+
     # ========================================================
     # Final Answer
     # ========================================================

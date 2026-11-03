@@ -272,5 +272,10 @@ def risk_driver_chart(
 # Run
 # =========================================================
 
+
+# V3: Read-only Ontology tools and PENDING maintenance proposals.
+from ontology_v3.mcp_tools import register_ontology_tools
+register_ontology_tools(mcp)
+
 if __name__ == "__main__":
     mcp.run()
